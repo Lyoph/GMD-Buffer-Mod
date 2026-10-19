@@ -5,7 +5,7 @@
     },
     "id": "lyophi.buffermod",
     "name": "Input Buffer",
-    "version": "v1.0.0",
+    "version": "v1.0.1",
     "developer": "Lyophi",
     "description": "Predictive input buffering for Geometry Dash. Early clicks are remembered and fired when you land or touch an orb, and ship, UFO, swing and wave get smoother, more consistent timing.",
     "settings": {
