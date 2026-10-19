@@ -1,8 +1,10 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/GJBaseGameLayer.hpp>
 #include <Geode/modify/PauseLayer.hpp>
+#include <Geode/modify/PlayLayer.hpp>
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <string>
 #include <utility>
 #include <vector>
@@ -20,6 +22,9 @@ static constexpr int STAGE_COUNT = 5;
 static int g_stage = 1;
 
 static constexpr int WAVE_MAX_TICKS = 8;
+
+// After a spawn, wave Grid / Min Gap are skipped for this many ticks.
+static constexpr int SPAWN_GRACE_TICKS = 16;
 
 // Index: 0 cube, 1 ball, 2 robot, 3 spider, 4 ship, 5 ufo, 6 swing, 7 wave.
 // Value: -1 = same as main window, 0 = off, >0 = custom ticks.
@@ -47,6 +52,9 @@ static bool g_debug = false;
 static constexpr int KEY_COUNT = 5;
 static constexpr char const* KEY_SETTINGS[] = {"key-stage", "key-tps-up", "key-tps-down", "key-debug", "key-wave"};
 static int g_keyVK[KEY_COUNT] = {0, 0, 0, 0, 0}; // 0 = none
+
+// Raised whenever the level resets (death, restart, checkpoint).
+static int g_resetEpoch = 0;
 // ----------------------------------------------------------------------
 
 #define DBG(...) do { if (g_debug) log::info(__VA_ARGS__); } while (0)
@@ -138,6 +146,10 @@ static int waveGridSteps() {
     return std::max(1, static_cast<int>(std::lround(ticks * stepsPerTick())));
 }
 
+static int spawnGraceSteps() {
+    return std::max(1, static_cast<int>(std::lround(SPAWN_GRACE_TICKS * stepsPerTick())));
+}
+
 static int ringsTouching(PlayerObject* p) {
     return p->m_touchingRings ? static_cast<int>(p->m_touchingRings->count()) : 0;
 }
@@ -185,7 +197,6 @@ static void doHotkey(int action) {
     }
 }
 
-// Rebindable hotkeys (edge-detected polling).
 static void pollKeys() {
 #ifdef GEODE_IS_WINDOWS
     static bool prev[KEY_COUNT] = {false, false, false, false, false};
@@ -213,7 +224,7 @@ $on_mod(Loaded) {
     }
     listenForSettingChanges<bool>("debug", [](bool) { loadSettings(); });
 
-    log::info("[InputBuffer] BufferMod loaded (v16: rebindable keys). Main: {}, TPS: {}, wave: {}",
+    log::info("[InputBuffer] BufferMod loaded (v19: wave tap + spawn fix). Main: {}, TPS: {}, wave: {}",
               STAGE_NAMES[g_stage], TPS_PRESETS[g_tpsIndex], waveModeName());
 }
 
@@ -237,6 +248,30 @@ class $modify(BufferPause, PauseLayer) {
     }
 };
 
+// Raises the reset flag on death, restart and checkpoint loads. The buffer
+// layer clears its state on the next step.
+class $modify(BufferReset, PlayLayer) {
+    void resetLevel() {
+        PlayLayer::resetLevel();
+        g_resetEpoch++;
+    }
+
+    void resetLevelFromStart() {
+        PlayLayer::resetLevelFromStart();
+        g_resetEpoch++;
+    }
+
+    void loadFromCheckpoint(CheckpointObject* object) {
+        PlayLayer::loadFromCheckpoint(object);
+        g_resetEpoch++;
+    }
+
+    void destroyPlayer(PlayerObject* player, GameObject* object) {
+        PlayLayer::destroyPlayer(player, object);
+        g_resetEpoch++;
+    }
+};
+
 struct PState {
     bool held = false;
     bool pending = false;
@@ -255,17 +290,62 @@ struct PState {
 class $modify(BufferLayer, GJBaseGameLayer) {
     struct Fields {
         int step = 0;
+        int epoch = 0;
+        int graceUntil = 0;
         PState ps[2];
     };
 
-    static void applyWaveEvent(PlayerObject* p, bool down) {
-        if (down) p->pushButton(PlayerButton::Jump);
-        else p->releaseButton(PlayerButton::Jump);
+    // True in a one-player level with a dual portal: a single click is sent
+    // as player 1 and the game applies it to both icons.
+    bool sharedDualInput() {
+        return m_gameState.m_isDualMode && m_levelSettings && !m_levelSettings->m_twoPlayerMode;
     }
 
-    static void flushWaveQueue(PlayerObject* p, PState& s) {
+    // Press or release for the icon at idx. In shared dual input, player 1's
+    // events also go to player 2 (rescued clicks only if player 2 is in a
+    // landing mode, so a cube rescue does not tap a wave).
+    void sendInput(PlayerObject* p, int idx, bool down, bool groundOnly) {
+        auto one = [&](PlayerObject* q) {
+            if (down) q->pushButton(PlayerButton::Jump);
+            else q->releaseButton(PlayerButton::Jump);
+        };
+        one(p);
+        if (idx == 0 && m_player2 && sharedDualInput()) {
+            if (!groundOnly || isGroundMode(m_player2)) one(m_player2);
+        }
+    }
+
+    // Clears our state after a death / restart / checkpoint load.
+    void syncState() {
+        auto f = m_fields.operator->();
+        if (f->epoch == g_resetEpoch) return;
+        f->epoch = g_resetEpoch;
+
+        bool inconsistent = false;
+        for (auto& s : f->ps) {
+            if (s.delayedRelease || s.releaseNext || !s.waveQueue.empty()) {
+                inconsistent = true;
+            }
+            s = PState();
+        }
+
+        // Wave Grid / Min Gap are skipped briefly after a spawn so the first
+        // clicks go straight through.
+        f->graceUntil = f->step + spawnGraceSteps();
+
+        // We may have held back a release the game never saw. Releasing a
+        // button that is not held is harmless, so make sure nothing is stuck.
+        if (inconsistent) {
+            if (m_player1) m_player1->releaseButton(PlayerButton::Jump);
+            if (m_player2) m_player2->releaseButton(PlayerButton::Jump);
+        }
+        DBG("[InputBuffer] state reset (death/restart), spawn grace until step {}{}",
+            f->graceUntil, inconsistent ? ", released stuck button" : "");
+    }
+
+    void flushWaveQueue(PlayerObject* p, PState& s, int idx) {
         for (auto const& ev : s.waveQueue) {
-            applyWaveEvent(p, ev.first);
+            sendInput(p, idx, ev.first, false);
         }
         s.waveQueue.clear();
     }
@@ -276,13 +356,13 @@ class $modify(BufferLayer, GJBaseGameLayer) {
 
         if (!s.waveQueue.empty()) {
             if (!p->m_isDart) {
-                flushWaveQueue(p, s);
+                flushWaveQueue(p, s, idx);
             } else {
                 size_t applied = 0;
                 while (applied < s.waveQueue.size() &&
                        step >= s.waveQueue[applied].second) {
                     auto ev = s.waveQueue[applied];
-                    applyWaveEvent(p, ev.first);
+                    sendInput(p, idx, ev.first, false);
                     DBG("[InputBuffer] {} WAVE {} {} applied at step {}",
                         tag, waveModeName(), ev.first ? "PRESS" : "RELEASE", step);
                     applied++;
@@ -295,7 +375,7 @@ class $modify(BufferLayer, GJBaseGameLayer) {
             if (!isFlyMode(p) || step >= s.releaseAt) {
                 s.delayedRelease = false;
                 s.held = false;
-                p->releaseButton(PlayerButton::Jump);
+                sendInput(p, idx, false, false);
                 DBG("[InputBuffer] {} MIN-HOLD release applied at step {} [{}]",
                     tag, step, modeName(p));
             }
@@ -303,7 +383,7 @@ class $modify(BufferLayer, GJBaseGameLayer) {
 
         if (s.releaseNext) {
             s.releaseNext = false;
-            if (!s.held) p->releaseButton(PlayerButton::Jump);
+            if (!s.held) sendInput(p, idx, false, true);
         }
 
         if (!s.pending) return;
@@ -337,7 +417,7 @@ class $modify(BufferLayer, GJBaseGameLayer) {
                 DBG("[InputBuffer] {} reached {} after {} steps but button still held, skipping ({})",
                     tag, what, waited, modeName(p));
             } else {
-                p->pushButton(PlayerButton::Jump);
+                sendInput(p, idx, true, true);
                 s.releaseNext = true;
                 log::info("[InputBuffer] *** SAVED +{:.1f} TICKS ({:.2f} frames @ 60fps) PRESS! [{} {} {}] (Step0: {} -> Delayed: {}) [Limit: {} steps] ***",
                           ticksSaved, ticksSaved / 4.0f, tag, modeName(p), what,
@@ -351,16 +431,28 @@ class $modify(BufferLayer, GJBaseGameLayer) {
         char const* tag = idx == 0 ? "P1" : "P2";
 
         if (!p->m_isDart && !s.waveQueue.empty()) {
-            flushWaveQueue(p, s);
+            flushWaveQueue(p, s, idx);
         }
 
         int n = waveGridSteps();
-        if (p->m_isDart && n > 0 && g_waveMode != WAVE_HOLD) {
+        bool inGrace = step < m_fields->graceUntil;
+        if (p->m_isDart && inGrace && n > 0 && g_waveMode != WAVE_HOLD) {
+            DBG("[InputBuffer] {} WAVE {} {} passed through (spawn grace) at step {}",
+                tag, waveModeName(), down ? "PRESS" : "RELEASE", step);
+        }
+
+        if (p->m_isDart && n > 0 && g_waveMode != WAVE_HOLD && !inGrace) {
             int target;
             if (g_waveMode == WAVE_GRID) {
                 target = ((step + n - 1) / n) * n;
                 if (!s.waveQueue.empty()) {
-                    target = std::max(target, s.waveQueue.back().second);
+                    auto const& last = s.waveQueue.back();
+                    target = std::max(target, last.second);
+                    // A tap must hold for at least one grid cell, or the
+                    // press and release would cancel out in the same step.
+                    if (!down && last.first) {
+                        target = std::max(target, last.second + n);
+                    }
                 }
             } else { // WAVE_GAP
                 target = step;
@@ -388,7 +480,7 @@ class $modify(BufferLayer, GJBaseGameLayer) {
         if (down && s.delayedRelease) {
             s.delayedRelease = false;
             s.held = false;
-            p->releaseButton(PlayerButton::Jump);
+            sendInput(p, idx, false, false);
         }
 
         if (!down && isFlyMode(p) && s.pressStep >= 0) {
@@ -424,15 +516,12 @@ class $modify(BufferLayer, GJBaseGameLayer) {
         auto f = m_fields.operator->();
         f->step++;
         pollKeys();
+        syncState();
 
         GJBaseGameLayer::processCommands(dt, isHalfTick, isLastTick);
 
         if (!PlayLayer::get()) {
-            for (auto& s : f->ps) {
-                s.delayedRelease = false;
-                s.waveQueue.clear();
-                s.pending = false;
-            }
+            for (auto& s : f->ps) s = PState();
             return;
         }
 
@@ -442,6 +531,7 @@ class $modify(BufferLayer, GJBaseGameLayer) {
 
     void handleButton(bool down, int button, bool isPlayer1) {
         auto f = m_fields.operator->();
+        syncState();
 
         if (PlayLayer::get() && button == 1) {
             int idx = isPlayer1 ? 0 : 1;
