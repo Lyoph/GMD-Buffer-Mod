@@ -285,7 +285,7 @@ class $modify(BufferReset, PlayLayer) {
     void destroyPlayer(PlayerObject* player, GameObject* object) {
         PlayLayer::destroyPlayer(player, object);
         g_resetEpoch++;
-    }
+    } 
 };
 
 struct PState {
