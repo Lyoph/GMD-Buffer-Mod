@@ -2,6 +2,7 @@
 #include <Geode/modify/GJBaseGameLayer.hpp>
 #include <Geode/modify/PauseLayer.hpp>
 #include <Geode/modify/PlayLayer.hpp>
+#include <Geode/modify/PlayerObject.hpp>
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -16,12 +17,13 @@
 using namespace geode::prelude;
 
 // ---- settings --------------------------------------------------------
-static constexpr char const* STAGE_NAMES[] = {"2 ticks", "4 ticks", "8 ticks", "16 ticks", "Off"};
-static constexpr int STAGES[] = {2, 4, 8, 16, 0};
-static constexpr int STAGE_COUNT = 5;
+static constexpr char const* STAGE_NAMES[] = {"2 ticks", "4 ticks", "8 ticks", "16 ticks", "Custom", "Off"};
+static constexpr double STAGES[] = {2, 4, 8, 16, -1, 0};
+static constexpr int STAGE_COUNT = 6;
 static int g_stage = 1;
+static double g_stageCustom = 1.0;
 
-static constexpr int WAVE_MAX_TICKS = 8;
+static constexpr double WAVE_MAX_TICKS = 8;
 
 // After a spawn, wave Grid / Min Gap are skipped for this many ticks.
 static constexpr int SPAWN_GRACE_TICKS = 16;
@@ -34,7 +36,7 @@ static constexpr char const* MODE_KEYS[] = {
     "cube-ticks", "ball-ticks", "robot-ticks", "spider-ticks",
     "ship-ticks", "ufo-ticks", "swing-ticks", "wave-ticks"
 };
-static int g_modeTicks[MODE_COUNT] = {-1, -1, -1, -1, -1, -1, -1, -1};
+static double g_modeTicks[MODE_COUNT] = {-1, -1, -1, -1, -1, -1, -1, -1};
 
 static constexpr char const* WAVE_NAMES[] = {"Min Hold", "Min Gap", "Grid"};
 enum WaveMode { WAVE_HOLD = 0, WAVE_GAP = 1, WAVE_GRID = 2 };
@@ -47,6 +49,8 @@ static constexpr int TPS_COUNT = 8;
 static int g_tpsIndex = 2;
 
 static bool g_debug = false;
+static bool g_cbfSplit = true;
+static int g_splitSlices = 8;
 
 // Hotkeys. Order: 0 stage, 1 tps up, 2 tps down, 3 debug, 4 wave mode.
 static constexpr int KEY_COUNT = 5;
@@ -87,11 +91,14 @@ static void loadSettings() {
     g_tpsIndex = indexOf(TPS_NAMES, TPS_COUNT, m->getSettingValue<std::string>("tps"), 2);
     g_waveMode = indexOf(WAVE_NAMES, WAVE_MODE_COUNT, m->getSettingValue<std::string>("wave-mode"), WAVE_GRID);
     for (int i = 0; i < MODE_COUNT; i++) {
-        g_modeTicks[i] = static_cast<int>(m->getSettingValue<int64_t>(MODE_KEYS[i]));
+        g_modeTicks[i] = m->getSettingValue<double>(MODE_KEYS[i]);
     }
     for (int i = 0; i < KEY_COUNT; i++) {
         g_keyVK[i] = vkFromName(m->getSettingValue<std::string>(KEY_SETTINGS[i]));
     }
+    g_stageCustom = m->getSettingValue<double>("stage-custom");
+    g_cbfSplit = m->getSettingValue<bool>("cbf-split");
+    g_splitSlices = static_cast<int>(m->getSettingValue<int64_t>("split-slices"));
     g_debug = m->getSettingValue<bool>("debug");
 }
 
@@ -101,8 +108,18 @@ static float stepsPerTick() {
     return TPS_PRESETS[g_tpsIndex] / 240.0f;
 }
 
+static double stageTicks() {
+    double t = STAGES[g_stage];
+    return t < 0 ? g_stageCustom : t;
+}
+
+static int ticksToSteps(double ticks) {
+    if (ticks <= 0) return 0;
+    return std::max(1, static_cast<int>(std::lround(ticks * stepsPerTick())));
+}
+
 static int mainLimitSteps() {
-    return static_cast<int>(std::lround(STAGES[g_stage] * stepsPerTick()));
+    return ticksToSteps(stageTicks());
 }
 
 static bool isFlyMode(PlayerObject* p) {
@@ -124,10 +141,10 @@ static int modeIndex(PlayerObject* p) {
     return 0;
 }
 
-static int ticksForMode(int idx) {
-    int c = g_modeTicks[idx];
+static double ticksForMode(int idx) {
+    double c = g_modeTicks[idx];
     if (c < 0) {
-        int t = STAGES[g_stage];
+        double t = stageTicks();
         if (idx == MODE_WAVE && t > 0) t = std::min(t, WAVE_MAX_TICKS);
         return t;
     }
@@ -135,19 +152,15 @@ static int ticksForMode(int idx) {
 }
 
 static int modeLimitSteps(PlayerObject* p) {
-    int ticks = ticksForMode(modeIndex(p));
-    if (ticks <= 0) return 0;
-    return std::max(1, static_cast<int>(std::lround(ticks * stepsPerTick())));
+    return ticksToSteps(ticksForMode(modeIndex(p)));
 }
 
 static int waveGridSteps() {
-    int ticks = ticksForMode(MODE_WAVE);
-    if (ticks <= 0) return 0;
-    return std::max(1, static_cast<int>(std::lround(ticks * stepsPerTick())));
+    return ticksToSteps(ticksForMode(MODE_WAVE));
 }
 
 static int spawnGraceSteps() {
-    return std::max(1, static_cast<int>(std::lround(SPAWN_GRACE_TICKS * stepsPerTick())));
+    return ticksToSteps(SPAWN_GRACE_TICKS);
 }
 
 static int ringsTouching(PlayerObject* p) {
@@ -171,8 +184,8 @@ static void doHotkey(int action) {
         case 0:
             g_stage = (g_stage + 1) % STAGE_COUNT;
             m->setSettingValue<std::string>("stage", STAGE_NAMES[g_stage]);
-            log::info("[InputBuffer] Main window -> {} ({} steps, wave {} steps @ {} TPS)",
-                      STAGE_NAMES[g_stage], mainLimitSteps(), waveGridSteps(), TPS_PRESETS[g_tpsIndex]);
+            log::info("[InputBuffer] Main window -> {} ({:.2f} ticks = {} steps, wave {} steps @ {} TPS)",
+                      STAGE_NAMES[g_stage], stageTicks(), mainLimitSteps(), waveGridSteps(), TPS_PRESETS[g_tpsIndex]);
             break;
         case 1:
             g_tpsIndex = std::min(g_tpsIndex + 1, TPS_COUNT - 1);
@@ -214,15 +227,18 @@ static void pollKeys() {
 $on_mod(Loaded) {
     loadSettings();
     listenForSettingChanges<std::string>("stage", [](std::string) { loadSettings(); });
+    listenForSettingChanges<double>("stage-custom", [](double) { loadSettings(); });
     listenForSettingChanges<std::string>("tps", [](std::string) { loadSettings(); });
     listenForSettingChanges<std::string>("wave-mode", [](std::string) { loadSettings(); });
     for (auto key : MODE_KEYS) {
-        listenForSettingChanges<int64_t>(key, [](int64_t) { loadSettings(); });
+        listenForSettingChanges<double>(key, [](double) { loadSettings(); });
     }
     for (auto key : KEY_SETTINGS) {
         listenForSettingChanges<std::string>(key, [](std::string) { loadSettings(); });
     }
     listenForSettingChanges<bool>("debug", [](bool) { loadSettings(); });
+    listenForSettingChanges<bool>("cbf-split", [](bool) { loadSettings(); });
+    listenForSettingChanges<int64_t>("split-slices", [](int64_t) { loadSettings(); });
 
     log::info("[InputBuffer] BufferMod loaded (v19: wave tap + spawn fix). Main: {}, TPS: {}, wave: {}",
               STAGE_NAMES[g_stage], TPS_PRESETS[g_tpsIndex], waveModeName());
@@ -269,7 +285,7 @@ class $modify(BufferReset, PlayLayer) {
     void destroyPlayer(PlayerObject* player, GameObject* object) {
         PlayLayer::destroyPlayer(player, object);
         g_resetEpoch++;
-    }
+    } 
 };
 
 struct PState {
@@ -286,6 +302,24 @@ struct PState {
     std::vector<std::pair<bool, int>> waveQueue;
     int lastReleaseStep = -1000000;
 };
+struct SplitState {
+    bool midStep = false;
+    PlayerObject* player = nullptr;
+    float rotationDelta = 0.f;
+    CCPoint startPos{};
+};
+static SplitState g_split;
+
+static void resetCollisionLog(PlayerObject* p) {
+    if (p->m_collisionLogTop) p->m_collisionLogTop->removeAllObjects();
+    if (p->m_collisionLogBottom) p->m_collisionLogBottom->removeAllObjects();
+    if (p->m_collisionLogLeft) p->m_collisionLogLeft->removeAllObjects();
+    if (p->m_collisionLogRight) p->m_collisionLogRight->removeAllObjects();
+    p->m_lastCollisionLeft = -1;
+    p->m_lastCollisionRight = -1;
+    p->m_lastCollisionBottom = -1;
+    p->m_lastCollisionTop = -1;
+}
 
 class $modify(BufferLayer, GJBaseGameLayer) {
     struct Fields {
@@ -408,22 +442,72 @@ class $modify(BufferLayer, GJBaseGameLayer) {
         bool onGround = p->m_isOnGround;
         bool onRing = rings > 0;
 
-        if (onGround || onRing) {
-            s.pending = false;
-            float ticksSaved = waited / stepsPerTick();
-            char const* what = onRing ? "RING" : "GROUND";
+        if (onGround || onRing) firePending(p, s, idx, onRing, 0.0);
+    }
 
-            if (s.held) {
-                DBG("[InputBuffer] {} reached {} after {} steps but button still held, skipping ({})",
-                    tag, what, waited, modeName(p));
-            } else {
-                sendInput(p, idx, true, true);
-                s.releaseNext = true;
-                log::info("[InputBuffer] *** SAVED +{:.1f} TICKS ({:.2f} frames @ 60fps) PRESS! [{} {} {}] (Step0: {} -> Delayed: {}) [Limit: {} steps] ***",
-                          ticksSaved, ticksSaved / 4.0f, tag, modeName(p), what,
-                          s.pendingStart, step, limit);
+    void firePending(PlayerObject* p, PState& s, int idx, bool onRing, double fraction) {
+        int step = m_fields->step;
+        char const* tag = idx == 0 ? "P1" : "P2";
+        char const* what = onRing ? "RING" : "GROUND";
+        double waited = step - s.pendingStart + fraction;
+        s.pending = false;
+
+        if (s.held) {
+            DBG("[InputBuffer] {} reached {} after {:.3f} steps but button still held, skipping ({})",
+                tag, what, waited, modeName(p));
+            return;
+        }
+        sendInput(p, idx, true, true);
+        s.releaseNext = true;
+        double ticksSaved = waited / stepsPerTick();
+        log::info("[InputBuffer] *** SAVED +{:.3f} TICKS ({:.2f} frames @ 60fps) PRESS! [{} {} {}] (Step0: {} -> Delayed: {} +{:.3f}) [Limit: {} steps] ***",
+                  ticksSaved, ticksSaved / 4.0, tag, modeName(p), what,
+                  s.pendingStart, step, fraction, modeLimitSteps(p));
+    }
+
+    bool splitLanding(PlayerObject* p, float dt) {
+        if (!g_cbfSplit || g_split.midStep || dt <= 0.f || !PlayLayer::get()) return false;
+        int idx = p == m_player1 ? 0 : p == m_player2 ? 1 : -1;
+        if (idx < 0) return false;
+
+        auto f = m_fields.operator->();
+        auto& s = f->ps[idx];
+        if (!s.pending || s.held || !isGroundMode(p)) return false;
+        if (p->m_isOnGround || ringsTouching(p) > 0) return false;
+        int limit = modeLimitSteps(p);
+        if (limit <= 0 || f->step - s.pendingStart > limit) return false;
+
+        int slices = std::clamp(g_splitSlices, 2, 64);
+        float lead = dt / slices;
+        g_split.midStep = true;
+        g_split.player = p;
+        g_split.startPos = p->getPosition();
+
+        int done = 0;
+        bool fired = false;
+        while (done < slices - 1) {
+            p->update(lead);
+            done++;
+            bool slope = p->m_isOnSlope && !p->m_isDart;
+            this->checkCollisions(p, slope ? dt : 0.f, true);
+            p->updateRotation(lead);
+            resetCollisionLog(p);
+            if (p->m_isDead) break;
+
+            int rings = ringsTouching(p);
+            if (p->m_isOnGround || rings > 0) {
+                firePending(p, s, idx, rings > 0, static_cast<double>(done) / slices);
+                fired = true;
+                break;
             }
         }
+
+        float rest = dt - lead * done;
+        g_split.rotationDelta = rest;
+        p->update(rest);
+        g_split.midStep = false;
+        if (!fired) DBG("[InputBuffer] split step {}: no contact in {} slices", f->step, slices);
+        return true;
     }
 
     bool inputPlayer(PlayerObject* p, PState& s, int idx, bool down) {
@@ -542,5 +626,24 @@ class $modify(BufferLayer, GJBaseGameLayer) {
         }
 
         GJBaseGameLayer::handleButton(down, button, isPlayer1);
+    }
+};
+
+class $modify(BufferPlayer, PlayerObject) {
+    void update(float dt) {
+        if (!g_split.midStep) {
+            auto gl = GJBaseGameLayer::get();
+            if (gl && static_cast<BufferLayer*>(gl)->splitLanding(this, dt)) return;
+        }
+        PlayerObject::update(dt);
+    }
+    void updateRotation(float t) {
+        if (!g_split.midStep && g_split.player == this) {
+            g_split.player = nullptr;
+            PlayerObject::updateRotation(g_split.rotationDelta);
+            m_lastPosition = g_split.startPos;
+            return;
+        }
+        PlayerObject::updateRotation(t);
     }
 };

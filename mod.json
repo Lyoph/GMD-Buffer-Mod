@@ -12,14 +12,23 @@
         "guide": {
             "type": "title",
             "name": "How to read the timing numbers",
-            "description": "Timing windows are measured in **ticks**. A tick is one tiny step of the game's physics. There are 240 ticks per second, so:\n\n**1 tick** = about 4 milliseconds\n**2 ticks** = about 8 ms\n**4 ticks** = about 17 ms (1 frame at 60 FPS)\n**8 ticks** = about 33 ms (2 frames)\n**16 ticks** = about 67 ms (4 frames)\n**32 ticks** = about 133 ms (8 frames)\n\nOn every window setting:\n**-1** = use the Main Buffer Window\n**0** = off, raw input with no help\n**1 or more** = your own value\n\nSmaller windows are stricter and feel more natural. Larger windows are more forgiving but can fire clicks earlier or later than you meant."
+            "description": "Timing windows are measured in **ticks**. A tick is one tiny step of the game's physics. There are 240 ticks per second, so:\n\n**0.5 tick** = about 2 ms (needs 480+ TPS to take effect)\n**1 tick** = about 4 milliseconds\n**2 ticks** = about 8 ms\n**4 ticks** = about 17 ms (1 frame at 60 FPS)\n**8 ticks** = about 33 ms (2 frames)\n**16 ticks** = about 67 ms (4 frames)\n**32 ticks** = about 133 ms (8 frames)\n\nOn every window setting:\n**-1** = use the Main Buffer Window\n**0** = off, raw input with no help\n**Above 0** = your own value (decimals like 0.5 or 0.33 work)\n\nSmaller windows are stricter and feel more natural. Larger windows are more forgiving but can fire clicks earlier or later than you meant."
         },
         "stage": {
             "type": "string",
             "name": "Main Buffer Window",
             "description": "The default window for every mode that is set to -1 below.\n\n**2 ticks** = about half a frame (very strict)\n**4 ticks** = about 1 frame (a good starting point)\n**8 ticks** = about 2 frames\n**16 ticks** = about 4 frames (very forgiving)\n**Off** = no default window\n\nA bigger window is more forgiving, but a click meant for later might fire sooner than you wanted.",
             "default": "4 ticks",
-            "one-of": ["2 ticks", "4 ticks", "8 ticks", "16 ticks", "Off"]
+            "one-of": ["2 ticks", "4 ticks", "8 ticks", "16 ticks", "Custom", "Off"]
+        },
+        "stage-custom": {
+            "type": "float",
+            "name": "Custom Main Window (ticks)",
+            "description": "Used when Main Buffer Window is set to **Custom**. Decimals are allowed, so you can assist by less than a whole tick.\n\nThe window is rounded to the nearest physics step, so precision depends on your TPS. At 240 TPS the smallest step is 1 tick; at 720 TPS it is 1/3 tick.\n\nExample with CBF at 720 TPS: **0.33** = 1 step, **0.67** = 2 steps (like 360 TPS), **1** = 3 steps (like 240 TPS).",
+            "default": 1.0,
+            "min": 0,
+            "max": 64,
+            "control": { "input": true, "arrows": true, "arrow-step": 0.25, "slider": false }
         },
         "sec-ground": {
             "type": "title",
@@ -27,40 +36,40 @@
             "description": "Cube, ball, robot and spider.\n\nThese windows set how long before landing or touching an orb a click is still remembered. If you tap a little early and let go, the click fires the moment you touch the ground or orb."
         },
         "cube-ticks": {
-            "type": "int",
+            "type": "float",
             "name": "Cube Window (ticks)",
-            "description": "How early you can click before landing or touching an orb in cube and still have it count.\n\n**-1** = same as Main Buffer Window\n**0** = off\n**1 or more** = your own value\n\nExamples: 4 = about 1 frame early, 8 = about 2 frames early, 16 = about 4 frames early.",
-            "default": -1,
+            "description": "How early you can click before landing or touching an orb in cube and still have it count.\n\n**-1** = same as Main Buffer Window\n**0** = off\n**Above 0** = your own value (decimals like 0.5 or 0.33 work)\n\nExamples: 4 = about 1 frame early, 8 = about 2 frames early, 16 = about 4 frames early.",
+            "default": -1.0,
             "min": -1,
             "max": 64,
-            "control": { "input": true, "arrows": true, "slider": false }
+            "control": { "input": true, "arrows": true, "arrow-step": 0.25, "slider": false }
         },
         "ball-ticks": {
-            "type": "int",
+            "type": "float",
             "name": "Ball Window (ticks)",
-            "description": "How early you can click before touching a surface or orb in ball and still have it count.\n\n**-1** = same as Main Buffer Window\n**0** = off\n**1 or more** = your own value\n\nExamples: 4 = about 1 frame early, 8 = about 2 frames early, 16 = about 4 frames early.",
-            "default": -1,
+            "description": "How early you can click before touching a surface or orb in ball and still have it count.\n\n**-1** = same as Main Buffer Window\n**0** = off\n**Above 0** = your own value (decimals like 0.5 or 0.33 work)\n\nExamples: 4 = about 1 frame early, 8 = about 2 frames early, 16 = about 4 frames early.",
+            "default": -1.0,
             "min": -1,
             "max": 64,
-            "control": { "input": true, "arrows": true, "slider": false }
+            "control": { "input": true, "arrows": true, "arrow-step": 0.25, "slider": false }
         },
         "robot-ticks": {
-            "type": "int",
+            "type": "float",
             "name": "Robot Window (ticks)",
-            "description": "How early you can click before landing or touching an orb in robot and still have it count.\n\n**-1** = same as Main Buffer Window\n**0** = off\n**1 or more** = your own value\n\nExamples: 4 = about 1 frame early, 8 = about 2 frames early, 16 = about 4 frames early.",
-            "default": -1,
+            "description": "How early you can click before landing or touching an orb in robot and still have it count.\n\n**-1** = same as Main Buffer Window\n**0** = off\n**Above 0** = your own value (decimals like 0.5 or 0.33 work)\n\nExamples: 4 = about 1 frame early, 8 = about 2 frames early, 16 = about 4 frames early.",
+            "default": -1.0,
             "min": -1,
             "max": 64,
-            "control": { "input": true, "arrows": true, "slider": false }
+            "control": { "input": true, "arrows": true, "arrow-step": 0.25, "slider": false }
         },
         "spider-ticks": {
-            "type": "int",
+            "type": "float",
             "name": "Spider Window (ticks)",
-            "description": "How early you can click before touching a surface or orb in spider and still have it count.\n\n**-1** = same as Main Buffer Window\n**0** = off\n**1 or more** = your own value\n\nExamples: 4 = about 1 frame early, 8 = about 2 frames early, 16 = about 4 frames early.",
-            "default": -1,
+            "description": "How early you can click before touching a surface or orb in spider and still have it count.\n\n**-1** = same as Main Buffer Window\n**0** = off\n**Above 0** = your own value (decimals like 0.5 or 0.33 work)\n\nExamples: 4 = about 1 frame early, 8 = about 2 frames early, 16 = about 4 frames early.",
+            "default": -1.0,
             "min": -1,
             "max": 64,
-            "control": { "input": true, "arrows": true, "slider": false }
+            "control": { "input": true, "arrows": true, "arrow-step": 0.25, "slider": false }
         },
         "sec-fly": {
             "type": "title",
@@ -68,40 +77,40 @@
             "description": "Ship, UFO, swing and wave.\n\nThere is no ground to wait for here, so these windows work differently. In ship, UFO and swing, a very quick tap is made to last at least this long, so fast taps come out the same length every time. In wave, the window is used by the Wave Mode you pick."
         },
         "ship-ticks": {
-            "type": "int",
+            "type": "float",
             "name": "Ship Window (ticks)",
-            "description": "The shortest a tap can be in ship. A quicker tap is stretched to this length.\n\n**-1** = same as Main Buffer Window\n**0** = off, raw input\n**1 or more** = your own value\n\nExamples: 2 = taps last at least about half a frame, 4 = at least about 1 frame.\n\nBigger values can make quick taps feel slower or heavier.",
-            "default": -1,
+            "description": "The shortest a tap can be in ship. A quicker tap is stretched to this length.\n\n**-1** = same as Main Buffer Window\n**0** = off, raw input\n**Above 0** = your own value (decimals like 0.5 or 0.33 work)\n\nExamples: 2 = taps last at least about half a frame, 4 = at least about 1 frame.\n\nBigger values can make quick taps feel slower or heavier.",
+            "default": -1.0,
             "min": -1,
             "max": 64,
-            "control": { "input": true, "arrows": true, "slider": false }
+            "control": { "input": true, "arrows": true, "arrow-step": 0.25, "slider": false }
         },
         "ufo-ticks": {
-            "type": "int",
+            "type": "float",
             "name": "UFO Window (ticks)",
-            "description": "The shortest a tap can be in UFO. A quicker tap is stretched to this length.\n\n**-1** = same as Main Buffer Window\n**0** = off, raw input\n**1 or more** = your own value\n\nExamples: 2 = taps last at least about half a frame, 4 = at least about 1 frame.\n\nBigger values can make quick taps feel slower or heavier.",
-            "default": -1,
+            "description": "The shortest a tap can be in UFO. A quicker tap is stretched to this length.\n\n**-1** = same as Main Buffer Window\n**0** = off, raw input\n**Above 0** = your own value (decimals like 0.5 or 0.33 work)\n\nExamples: 2 = taps last at least about half a frame, 4 = at least about 1 frame.\n\nBigger values can make quick taps feel slower or heavier.",
+            "default": -1.0,
             "min": -1,
             "max": 64,
-            "control": { "input": true, "arrows": true, "slider": false }
+            "control": { "input": true, "arrows": true, "arrow-step": 0.25, "slider": false }
         },
         "swing-ticks": {
-            "type": "int",
+            "type": "float",
             "name": "Swing Window (ticks)",
-            "description": "The shortest a tap can be in swing. A quicker tap is stretched to this length.\n\n**-1** = same as Main Buffer Window\n**0** = off, raw input\n**1 or more** = your own value\n\nExamples: 2 = taps last at least about half a frame, 4 = at least about 1 frame.\n\nBigger values can make quick taps feel slower or heavier.",
-            "default": -1,
+            "description": "The shortest a tap can be in swing. A quicker tap is stretched to this length.\n\n**-1** = same as Main Buffer Window\n**0** = off, raw input\n**Above 0** = your own value (decimals like 0.5 or 0.33 work)\n\nExamples: 2 = taps last at least about half a frame, 4 = at least about 1 frame.\n\nBigger values can make quick taps feel slower or heavier.",
+            "default": -1.0,
             "min": -1,
             "max": 64,
-            "control": { "input": true, "arrows": true, "slider": false }
+            "control": { "input": true, "arrows": true, "arrow-step": 0.25, "slider": false }
         },
         "wave-ticks": {
-            "type": "int",
+            "type": "float",
             "name": "Wave Window (ticks)",
-            "description": "How strong the wave timing help is. The meaning depends on the Wave Mode below:\n\n**Min Hold**: the shortest a tap can be\n**Min Gap**: the shortest wait between letting go and pressing again\n**Grid**: the size of the timing grid (every click and release waits for the next grid line)\n\n**-1** = same as Main Buffer Window, but never more than 8 ticks\n**0** = off, raw input\n**1 or more** = your own value (not capped)\n\n2 or 4 is a good place to start. Large values make wave more consistent but much less responsive, and can feel very laggy.",
-            "default": -1,
+            "description": "How strong the wave timing help is. The meaning depends on the Wave Mode below:\n\n**Min Hold**: the shortest a tap can be\n**Min Gap**: the shortest wait between letting go and pressing again\n**Grid**: the size of the timing grid (every click and release waits for the next grid line)\n\n**-1** = same as Main Buffer Window, but never more than 8 ticks\n**0** = off, raw input\n**Above 0** = your own value (decimals like 0.5 or 0.33 work) (not capped)\n\n2 or 4 is a good place to start. Large values make wave more consistent but much less responsive, and can feel very laggy.",
+            "default": -1.0,
             "min": -1,
             "max": 64,
-            "control": { "input": true, "arrows": true, "slider": false }
+            "control": { "input": true, "arrows": true, "arrow-step": 0.25, "slider": false }
         },
         "wave-mode": {
             "type": "string",
@@ -118,7 +127,7 @@
         "key-stage": {
             "type": "string",
             "name": "Key: Cycle Main Window",
-            "description": "Steps the Main Buffer Window through 2, 4, 8, 16 ticks and Off.",
+            "description": "Steps the Main Buffer Window through 2, 4, 8, 16 ticks, Custom and Off.",
             "default": "F6",
             "one-of": ["None","F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12","Insert","Delete","Home","End","Page Up","Page Down"]
         },
@@ -154,6 +163,21 @@
             "type": "title",
             "name": "General",
             "description": "Settings that apply to everything."
+        },
+        "cbf-split": {
+            "type": "bool",
+            "name": "Sub-tick Landing (CBF)",
+            "description": "Fires a saved click at the exact point inside the tick where you touch the ground or an orb, not at the start of the next tick. The click moves only as far as it needs to so you survive, instead of being rounded up to a whole tick.\n\nWorks like Click Between Frames tick splitting. Turn it off to go back to whole-tick timing.",
+            "default": true
+        },
+        "split-slices": {
+            "type": "int",
+            "name": "Sub-tick Resolution",
+            "description": "How finely each tick is checked when looking for the landing point.\n\n**8** = 1/8 tick (good default)\n**32** = 1/32 tick (more precise, a little more CPU while a click is saved)",
+            "default": 8,
+            "min": 2,
+            "max": 64,
+            "control": { "input": true, "arrows": true, "slider": false }
         },
         "tps": {
             "type": "string",
