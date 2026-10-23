@@ -5,7 +5,7 @@
     },
     "id": "lyophi.buffermod",
     "name": "Input Buffer",
-    "version": "v1.0.2",
+    "version": "v1.1.0",
     "developer": "Lyophi",
     "description": "Predictive input buffering for Geometry Dash. Early clicks are remembered and fired when you land or touch an orb, and ship, UFO, swing and wave get smoother, more consistent timing.",
     "settings": {
@@ -113,54 +113,101 @@
         "sec-keys": {
             "type": "title",
             "name": "Hotkeys",
-            "description": "Keys that work while you are in a level. Pick **None** to disable one. If two actions share a key, both will trigger."
+            "description": "Keys that work while you are in a level. Click a box and press a key, or clear it to turn that hotkey off. If two actions share a key, both will trigger."
         },
-        "key-stage": {
-            "type": "string",
+        "kb-stage": {
+            "type": "keybind",
             "name": "Key: Cycle Main Window",
             "description": "Steps the Main Buffer Window through 2, 4, 8, 16 ticks and Off.",
             "default": "F6",
-            "one-of": ["None","F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12","Insert","Delete","Home","End","Page Up","Page Down"]
+            "category": "gameplay"
         },
-        "key-tps-up": {
-            "type": "string",
+        "kb-tps-up": {
+            "type": "keybind",
             "name": "Key: TPS Up",
-            "description": "Moves the Game Speed (TPS) setting up one preset. Remember it must match your real TPS.",
+            "description": "Moves the Game Speed (TPS) up to the next common speed (60, 120, 240, 360, 480, 720, 960, 1000). Remember it must match your real TPS.",
             "default": "F7",
-            "one-of": ["None","F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12","Insert","Delete","Home","End","Page Up","Page Down"]
+            "category": "gameplay"
         },
-        "key-tps-down": {
-            "type": "string",
+        "kb-tps-down": {
+            "type": "keybind",
             "name": "Key: TPS Down",
-            "description": "Moves the Game Speed (TPS) setting down one preset.",
+            "description": "Moves the Game Speed (TPS) down to the previous common speed (60, 120, 240, 360, 480, 720, 960, 1000).",
             "default": "F8",
-            "one-of": ["None","F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12","Insert","Delete","Home","End","Page Up","Page Down"]
+            "category": "gameplay"
         },
-        "key-debug": {
-            "type": "string",
+        "kb-debug": {
+            "type": "keybind",
             "name": "Key: Debug Logging",
             "description": "Turns debug logging on or off.",
             "default": "F9",
-            "one-of": ["None","F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12","Insert","Delete","Home","End","Page Up","Page Down"]
+            "category": "gameplay"
         },
-        "key-wave": {
-            "type": "string",
+        "kb-wave": {
+            "type": "keybind",
             "name": "Key: Cycle Wave Mode",
             "description": "Switches between Min Hold, Min Gap and Grid. Best used while paused.",
             "default": "F10",
-            "one-of": ["None","F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12","Insert","Delete","Home","End","Page Up","Page Down"]
+            "category": "gameplay"
+        },
+        "kb-section": {
+            "type": "keybind",
+            "name": "Key: Add Section Here",
+            "description": "Adds a section to the current level at the percent you are at right now (experimental sections). Works in a level, including practice mode.",
+            "default": "F11",
+            "category": "gameplay"
+        },
+        "sec-experimental": {
+            "type": "title",
+            "name": "Experimental",
+            "description": "Features that are still being tested. They are off by default and may not behave perfectly."
+        },
+        "dual-mode": {
+            "type": "bool",
+            "name": "Dual Mode Support (Experimental)",
+            "description": "Turns the buffer on during **dual sections**: when a dual portal gives you a second icon in a normal one-player level.\n\n**Off** (default): dual sections use the normal game input. There is no buffering or timing help while you are dual.\n**On**: each icon is buffered by its own game mode, so a cube and a wave can each follow their own rules.\n\nThis is experimental and can behave unexpectedly, for example a click doing nothing on one icon, or an extra jump. If something feels wrong in a dual section, turn this off.\n\n2-player levels are not affected by this setting.",
+            "default": false
+        },
+        "ship-style": {
+            "type": "string",
+            "name": "Ship Timing Style (Experimental)",
+            "description": "How clicks are handled in ship mode, using the ship window.\n\n**Min Hold** (default): a quick tap is held for at least the window.\n**Min Gap**: clicks keep at least the window between a release and the next press.\n**Grid**: presses and releases snap to a fixed beat. Clicks can be delayed by up to the window, so it can make some timings impossible to hit.\n\nExperimental. Leave on Min Hold unless you are testing.",
+            "default": "Min Hold",
+            "one-of": ["Min Hold", "Min Gap", "Grid"]
+        },
+        "ufo-style": {
+            "type": "string",
+            "name": "UFO Timing Style (Experimental)",
+            "description": "How clicks are handled in UFO mode, using the UFO window.\n\n**Min Hold** (default): a quick tap is held for at least the window.\n**Min Gap**: clicks keep at least the window between a release and the next press.\n**Grid**: presses and releases snap to a fixed beat. Clicks can be delayed by up to the window, so it can make some timings impossible to hit.\n\nExperimental. Leave on Min Hold unless you are testing.",
+            "default": "Min Hold",
+            "one-of": ["Min Hold", "Min Gap", "Grid"]
+        },
+        "swing-style": {
+            "type": "string",
+            "name": "Swing Timing Style (Experimental)",
+            "description": "How clicks are handled in swing mode, using the swing window.\n\n**Min Hold** (default): a quick tap is held for at least the window.\n**Min Gap**: clicks keep at least the window between a release and the next press.\n**Grid**: presses and releases snap to a fixed beat. Clicks can be delayed by up to the window, so it can make some timings impossible to hit.\n\nExperimental. Leave on Min Hold unless you are testing.",
+            "default": "Min Hold",
+            "one-of": ["Min Hold", "Min Gap", "Grid"]
+        },
+        "sections": {
+            "type": "bool",
+            "name": "Level Sections (Experimental)",
+            "description": "Lets a level use different settings between percents you choose (for example 0.00-35.00% one setup, 35.50-60.00% another). Each section has its own start, end and settings. Edit them from the pause menu: **Buffer > Advanced > Sections**.\n\nOff by default. Sections do not work in platformer levels. Switching sections clears held input at the boundary.",
+            "default": false
         },
         "sec-general": {
             "type": "title",
             "name": "General",
             "description": "Settings that apply to everything."
         },
-        "tps": {
-            "type": "string",
+        "tps-value": {
+            "type": "int",
             "name": "Game Speed (TPS)",
-            "description": "Must match the TPS you set in Mega Hack, or 240 if you have not changed it.\n\nThe mod uses this to turn ticks into real time. If it is wrong, every window will be the wrong size: too short if you set it lower than your real TPS, too long if you set it higher.\n\nThis does not change your game's speed. It only tells the mod what speed you are running.",
-            "default": "240",
-            "one-of": ["60", "120", "240", "360", "480", "720", "960", "1000"]
+            "description": "Type the TPS you set in Mega Hack, or 240 if you have not changed it. Any whole number from 1 to 10000 works, for example 240, 360, 720 or 1000.\n\nThe mod uses this to turn ticks into real time. If it is wrong, every window will be the wrong size: too short if you type less than your real TPS, too long if you type more.\n\nThis does not change your game's speed. It only tells the mod what speed you are running.",
+            "default": 240,
+            "min": 1,
+            "max": 10000,
+            "control": { "input": true, "arrows": false, "slider": false }
         },
         "debug": {
             "type": "bool",

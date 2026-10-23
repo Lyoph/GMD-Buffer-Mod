@@ -62,3 +62,5 @@ build-*/
 # CLion
 .idea/
 /cmake-build-*/
+# build for a friend (not part of the repo)
+friend-build/
