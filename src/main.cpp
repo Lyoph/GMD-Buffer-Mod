@@ -588,6 +588,90 @@ static void addSectionHere() {
     Notification::create(msg.c_str(), NotificationIcon::Success, 1.5f)->show();
 }
 
+// Small window that asks where a new section should start.
+class AddSectionPopup : public geode::Popup {
+protected:
+    std::function<void(float)> m_pick;
+    TextInput* m_input = nullptr;
+    CCLabelBMFont* m_status = nullptr;
+
+    bool init(std::function<void(float)> pick) {
+        if (!Popup::init(300.f, 190.f)) return false;
+        m_pick = std::move(pick);
+        this->setTitle("Add a section");
+
+        auto label = CCLabelBMFont::create("Where should it start?", "bigFont.fnt");
+        label->setScale(0.4f);
+        m_mainLayer->addChildAtPosition(label, Anchor::Center, {0.f, 50.f});
+
+        m_input = TextInput::create(100.f, "Type %");
+        m_input->setFilter("0123456789.");
+        m_input->setMaxCharCount(6);
+        m_input->setScale(0.8f);
+        m_mainLayer->addChildAtPosition(m_input, Anchor::Center, {-50.f, 24.f});
+        button("Add", 70.f, 24.f, menu_selector(AddSectionPopup::onTyped));
+
+        std::string death = g_lastDeathPct >= 0.f
+            ? "Last death: " + fmtPct(roundPct(g_lastDeathPct)) + "%"
+            : "Last death: none yet";
+        button(death.c_str(), 0.f, -10.f, menu_selector(AddSectionPopup::onDeath));
+
+        auto pl = PlayLayer::get();
+        std::string now = pl
+            ? "Current position: " + fmtPct(roundPct(pl->getCurrentPercent())) + "%"
+            : "Current position: unavailable";
+        button(now.c_str(), 0.f, -42.f, menu_selector(AddSectionPopup::onNow));
+
+        m_status = CCLabelBMFont::create("", "bigFont.fnt");
+        m_status->setScale(0.3f);
+        m_mainLayer->addChildAtPosition(m_status, Anchor::Center, {0.f, -70.f});
+        return true;
+    }
+
+    void button(char const* s, float x, float y, SEL_MenuHandler cb) {
+        auto spr = ButtonSprite::create(s);
+        spr->setScale(0.55f);
+        auto btn = CCMenuItemSpriteExtra::create(spr, this, cb);
+        m_buttonMenu->addChildAtPosition(btn, Anchor::Center, {x, y});
+    }
+
+    void choose(float pct) {
+        auto pick = m_pick;
+        this->onClose(nullptr);
+        if (pick) pick(roundPct(pct));
+    }
+
+public:
+    static AddSectionPopup* create(std::function<void(float)> pick) {
+        auto ret = new AddSectionPopup();
+        if (ret->init(std::move(pick))) {
+            ret->autorelease();
+            return ret;
+        }
+        delete ret;
+        return nullptr;
+    }
+
+    void onTyped(CCObject*) {
+        std::string s = m_input->getString();
+        if (s.empty()) { m_status->setString("Type a percentage first."); return; }
+        float v = static_cast<float>(std::atof(s.c_str()));
+        if (v < 0.f || v > 100.f) { m_status->setString("Use a number from 0 to 100."); return; }
+        choose(v);
+    }
+
+    void onDeath(CCObject*) {
+        if (g_lastDeathPct < 0.f) { m_status->setString("You haven't died in this level yet."); return; }
+        choose(g_lastDeathPct);
+    }
+
+    void onNow(CCObject*) {
+        auto pl = PlayLayer::get();
+        if (!pl) { m_status->setString("Open this from inside a level."); return; }
+        choose(pl->getCurrentPercent());
+    }
+};
+
 // The window where sections are edited. Every section keeps its own copy of
 // the settings, which can be changed here without leaving the window.
 class SectionsPopup : public geode::Popup {
@@ -808,10 +892,7 @@ protected:
             return;
         }
         m_status->setColor({255, 255, 255});
-        std::string d = g_lastDeathPct >= 0.f
-            ? "Add starts at last death: " + fmtPct(g_lastDeathPct) + "%"
-            : "Add starts at 0.00% (no death yet)";
-        m_status->setString(d.c_str());
+        m_status->setString("Add: type a %, last death, or current position");
     }
 
     void refresh() {
@@ -929,9 +1010,15 @@ public:
         m_status->setString(("Loaded '" + name + "'.").c_str());
     }
 
+    // Add asks where the new section should start.
     void onAdd(CCObject*) {
         if (m_levelID == 0) { m_status->setString("Open this from inside a level."); return; }
-        float start = g_lastDeathPct >= 0.f ? roundPct(g_lastDeathPct) : 0.f;
+        auto popup = AddSectionPopup::create([this](float pct) { this->addAt(pct); });
+        if (popup) popup->show();
+    }
+
+    void addAt(float start) {
+        start = roundPct(start);
         for (auto const& s : m_ls.secs) {
             if (std::fabs(s.start - start) < 0.005f) { m_status->setString("A section already starts there."); return; }
         }
@@ -1800,9 +1887,14 @@ class $modify(BufferLayer, GJBaseGameLayer) {
         syncState();
 
         if (PlayLayer::get() && button == 1) {
+            // Outside two-player mode the game applies every input to player 1,
+            // even one that arrives flagged as player 2 (for example a Jump P2
+            // keybind). Treat those inputs as player 1 so the right icon is helped.
+            bool asPlayer1 = isPlayer1 || !(m_levelSettings && m_levelSettings->m_twoPlayerMode);
+
             // Dual portal in a one-player level: the game applies a single
             // click to both icons.
-            if (isPlayer1 && m_player1 && sharedDualInput()) {
+            if (asPlayer1 && m_player1 && sharedDualInput()) {
                 if (!g_dualEnabled) {
                     // Experimental dual support is off: plain game input.
                     bypassCleanup();
@@ -1826,8 +1918,8 @@ class $modify(BufferLayer, GJBaseGameLayer) {
                 return;
             }
 
-            int idx = isPlayer1 ? 0 : 1;
-            auto p = isPlayer1 ? m_player1 : m_player2;
+            int idx = asPlayer1 ? 0 : 1;
+            auto p = asPlayer1 ? m_player1 : m_player2;
             if (p) {
                 if (inputPlayer(p, f->ps[idx], idx, down)) return;
             }
