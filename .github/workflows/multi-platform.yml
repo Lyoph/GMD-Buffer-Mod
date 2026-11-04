@@ -10,9 +10,18 @@ on:
 
 jobs:
   build:
-    # mod.json only lists Windows (gd.win), so Windows is the only target.
-    name: Windows
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - { name: Windows, os: windows-latest, target: Win64 }
+          - { name: macOS, os: macos-latest, target: MacOS }
+          - { name: iOS, os: macos-latest, target: iOS }
+          - { name: Android32, os: ubuntu-latest, target: Android32 }
+          - { name: Android64, os: ubuntu-latest, target: Android64 }
+
+    name: ${{ matrix.config.name }}
+    runs-on: ${{ matrix.config.os }}
 
     steps:
       - uses: actions/checkout@v7
@@ -21,7 +30,7 @@ jobs:
         uses: geode-sdk/build-geode-mod@main
         with:
           combine: true
-          target: Win64
+          target: ${{ matrix.config.target }}
           # The bindings repo's main branch is mid-update for a newer GD
           # version and does not build against stable SDK 5.11.2. Pin it to
           # the last commit before the 5.11.2 release, and build the matching
